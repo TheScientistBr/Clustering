@@ -1,0 +1,244 @@
+---
+title: "Customer Cluster Analysis"
+author: "Delermando Branquinho Filho"
+date: "21 de fevereiro de 2017"
+output:
+  html_document: default
+  pdf_document: default
+  word_document: default
+subtitle: Unsupervised Machine Learning
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Introdução
+
+A análise de cluster ou clustering é a tarefa de agrupar um conjunto de objetos de tal forma que os objetos no mesmo grupo (chamados de cluster) sejam mais parecidos (em algum sentido ou outro) uns com os outros do que com aqueles em outros grupos (clusters). É uma tarefa importante na fase exploratória de dados, e uma técnica comum para análise de dados estatísticos, usada em muitos campos, incluindo aprendizagem de máquina, reconhecimento de padrões, análise de imagem, recuperação de informação, bioinformática, compressão de dados e computação gráfica.
+
+Análise de cluster em si não é um algoritmo específico, mas é a tarefa geral a ser resolvida. Pode ser alcançado por vários algoritmos que diferem significativamente em sua noção do que constitui um cluster e como encontrá-los eficientemente. As noções populares de clusters incluem grupos com pequenas distâncias entre os membros do cluster, áreas densas do espaço de dados, intervalos ou distribuições estatísticas particulares. Clustering pode, portanto, ser formulado como um problema de otimização multi-objetivo. O algoritmo de agrupamento apropriado e as configurações de parâmetros (incluindo valores como a função de distância a ser usada, um limite de densidade ou o número de clusters esperados) dependem do conjunto de dados individuais e do uso pretendido dos resultados. A análise de cluster como tal não é uma tarefa automática, mas um processo iterativo de descoberta de conhecimento ou otimização multi-objetivo interativa que envolve julgamento e falha. Muitas vezes é necessário modificar o pré-processamento de dados e os parâmetros do modelo até que o resultado obtenha as propriedades desejadas.
+
+Neste documetno, descreverei três das várias abordagens: aglomeração hierárquica, particionamento e model based. Embora não haja melhores soluções para o problema de determinar o número de aglomerados a extrair, são dadas várias abordagens abaixo.
+
+## Preparação do ambiente para execução
+
+### Uma função para validar os pacotes necessário se estão instalados
+
+As informações encontradas são armazenadas em cache (pela biblioteca) para a sessão R eo argumento de campos especificados e atualizadas somente se o diretório da biblioteca de nível superior tiver sido alterado, por exemplo, instalando ou removendo um pacote. Se as informações em cache ficarem confusas, ela pode ser atualizada executando installed.packages (noCache = TRUE).
+
+```{r, message=F, warning=F}
+is.installed <- function(mypkg) is.element(mypkg, installed.packages()[,1]) 
+
+```
+
+### Verificando se os pacotes necessários estão instalados
+
+```{r, message=F, warning=F}
+if(!is.installed("cluster"))
+        install.packages("cluster")
+
+if(!is.installed("factoextra"))
+        install.packages("factoextra")
+
+if(!is.installed("xlsx"))
+        install.packages("xlsx")
+
+if(!is.installed("ggplot2"))
+        install.packages("ggplot2", dep = TRUE)
+
+if(!is.installed("lazyeval"))
+        install.packages("lazyeval", dep = TRUE)
+```
+
+
+### Uma Função para calcular a idade dos cliente de acordo com sua data de nacimento
+
+Esta função é necessária para converter, em tempo de execução, a idade de cada cliente
+
+```{r, message=F, warning=F}
+age_years <- function(earlier, later) {
+        lt <- data.frame(earlier, later)
+        age <- as.numeric(format(lt[,2],format="%Y")) - as.numeric(format(lt[,1],format="%Y"))
+        
+        dayOnLaterYear <- ifelse(format(lt[,1],format="%m-%d")!="02-29",
+                                 as.Date(paste(format(lt[,2],format="%Y"),"-",format(lt[,1],format="%m-%d"),sep="")),
+                                 ifelse(as.numeric(format(later,format="%Y")) %% 400 == 0 | as.numeric(format(later,format="%Y")) %% 100 != 0 & as.numeric(format(later,format="%Y")) %% 4 == 0,
+                                        as.Date(paste(format(lt[,2],format="%Y"),"-",format(lt[,1],format="%m-%d"),sep="")),
+                                        as.Date(paste(format(lt[,2],format="%Y"),"-","02-28",sep=""))))
+        
+        age[which(dayOnLaterYear > lt$later)] <- age[which(dayOnLaterYear > lt$later)] - 1
+        
+        age
+}
+```
+
+### Carrega os pacotes necessários para a execução
+
+As mensagens e avisos foram retiradas ou suprimidas para efeito de apresentação.
+Os erros serão mostrados caso algum seja encontrado durante a carga da biblioteca
+
+```{r, message=F, warning=F}
+library("ggplot2")
+library("cluster")
+library("factoextra")
+library("nnet")
+library("ClustOfVar")
+require("xlsx")
+require("RCurl")
+```
+
+**Inicializa ambiente de pesquisa reprodutível**
+
+Não há problemas em alerar o valor abaixo, desde que isso não seja feito no mesmo experimento.
+
+```{r, message=F, warning=F}
+set.seed(1608)
+```
+
+
+## Carga do Dataset
+
+O arquivo está no formato MS Excel, a planilha de interesse é a "Dados".
+A variável maxLoad é usada para limitar a carga, pois originalmente o volume de linhas não são recomendadas para efeitos de teste. Eu usei a variável com tamanho de 51, mas para a clusterização de todo dataset o conteúdo deve ser NULL.
+
+```{r, message=F, warning=F}
+maxLoad <- NULL
+mydata <- read.xlsx("datasets/Dataset-CodeChallengeDataScientist.xlsx", 
+                    sheetName  = "Dados",endRow = maxLoad)
+head(mydata,3)
+mydata <- data.frame(mydata,stringsAsFactors = TRUE)
+```
+
+### Remove dados não disponíveis, caso existam
+
+```{r, message=F, warning=F}
+mydata <- na.omit(mydata)
+
+# scale é uma função genérica cujo método padrão centra e / ou escala as colunas de uma matriz numérico
+
+mydata$DATA_NASCIMENTO <- age_years(as.Date(mydata$DATA_NASCIMENTO),as.Date(Sys.Date()))
+mydata$GEO_REFERENCIA <- scale(mydata$GEO_REFERENCIA)
+mydata$VALOR_01 <- scale(mydata$VALOR_01)
+mydata$VALOR_02 <- scale(mydata$VALOR_02)
+mydata$VALOR_03 <- scale(mydata$VALOR_03)
+mydata$VALOR_04 <- scale(mydata$VALOR_04)
+
+# Após o processamento, logo abaixo são mostradas as mesmas três primeiras linhas normalizadas
+
+head(mydata,3)
+```
+
+# Clusterizando
+
+## Modelo hierárquico
+
+### Conjunto hierárquico ascendente de um conjunto de variáveis. 
+
+As variáveis podem ser quantitativas, qualitativas ou uma distribuição de ambas. O critério de agregação é a diminuição da homogeneidade para o cluster que está sendo mesclado. A homogeneidade de um cluster é a soma da razão de correlação (para variáveis qualitativas) e da correlação quadrática (para variáveis quantitativas) entre as variáveis e o centro do cluster (centroide) que é o primeiro componente principal de PCA mix. 
+
+PCA mix é definido para uma distribuição de variáveis qualitativas e quantitativas e inclui análises de componentes principais comuns (**PCA**) e análise de correspondência múltipla (**MCA**) como casos especiais. Os valores em falta são substituídos por médias para variáveis quantitativas e por zeros na matriz de indicadores para a variável qualitativa.
+
+**Vamos separar o dataset em duas parte, qualitativa como "a" e quantitativa como "x"**
+
+```{r, message=F, warning=F}
+a <- mydata[,c(4:6,11)]
+x <- mydata[,c(2,3,7:10)]
+```
+
+### Número de cluster encontrados, ou aglomerações
+
+Observando a figura abaixo, podemos verificar que ela sugere um número possível de clusters.
+
+```{r, message=F, warning=F}
+tree <- hclustvar(x,a)
+stab <- stability(tree, graph = FALSE,B = 10)
+```
+
+**Número de Cluster encontrados**
+
+```{r, message=F, warning=F}
+nrCluster <- which.is.max(stab$meanCR)
+nrCluster
+
+```
+
+**Número de Cluster encontrados em formato gráfico**
+
+```{r, message=F, warning=F}
+plot(stab)
+
+```
+
+
+```{r, message=F, warning=F}
+plot(tree)
+rect.hclust(tree, k=nrCluster, border="red")
+```
+
+### Índice Rand ajustado
+
+Para ajudar a confirmar o número provável de clusters, usaremos o gráfico no formato Boxplot com o índice de Rand ajustado.
+
+```{r, message=F, warning=F}
+boxplot(stab$matCR, main="Dispersão do índice Rand ajustado")
+```
+
+O índice Rand [1] ou Rand (nomeado por William M. Rand) em estatística, e em particular no agrupamento de dados, é uma medida da similaridade entre dois agrupamentos de dados. Uma forma do índice Rand pode ser definida que é ajustada para o agrupamento casual de elementos, este é o índice Rand ajustado. Do ponto de vista matemático, o índice Rand está relacionado com a precisão, mas é aplicável mesmo quando os rótulos das classes não são usadas, ou seja, agrupamentos ou clusters.
+
+
+## Particionamento
+
+K-means clustering é o método de particionamento mais popular. Exige que o analista especifique o número de clusters a serem extraídos. Um gráfico da soma de quadrados de grupos por número de aglomerados extraídos pode ajudar a determinar o número apropriado de clusters. O analista procura uma curva na trama semelhante a um teste de análise fatorial.
+
+## K-Means Clustering with k clusters
+
+### PCA - Principal Component Analisys
+
+Para a conveniência da visualização, tomamos os dois primeiros componentes principais como as novas variáveis de característica e realizamos k-means somente nestes dados bidimensionais.
+
+```{r, message=F, warning=F}
+pca <- princomp(x, cor=T)
+pc.comp <- pca$scores
+pc.comp1 <- -1*pc.comp[,1]
+pc.comp2 <- -1*pc.comp[,2]
+newComp <- cbind(pc.comp1, pc.comp2)
+cl <- kmeans(newComp, nrCluster)
+plot(pc.comp1, pc.comp2,col=cl$cluster)
+points(cl$centers, pch=16)
+```
+
+O algorítmo kmeans executa a análise de agrupamento e fornece os resultados de agrupamento e seus centroides, para ser exato, o vetor centróide (ou seja, a média) para cada cluster.
+
+
+```{r, message=F, warning=F}
+fit <- kmeans(x, nrCluster) 
+fit$size
+clusplot(mydata, fit$cluster, color=TRUE, shade=TRUE, labels=4, lines=0)
+```
+
+
+## Model-based Clustering
+
+Na abordagem Model-based clustering, cada componente de uma densidade de distribuição finita é geralmente associado a um grupo ou cluster. A maioria das aplicações assume que todas as densidades de componentes surgem da mesma família de distribuição paramétrica, embora isto não necessite ser o caso em geral. Um modelo popular é o modelo de distribuição gaussiana (GMM), que assume uma distribuição gaussiana (multivariada).
+
+
+```{r, message=F, warning=F}
+library(mclust)
+fit <- Mclust(mydata)
+
+plot(fit, ylim = range(fit$BIC[,-(1:2)], na.rm = TRUE),
+legendArgs = list(x = "bottomleft"))
+
+```
+
+
+Na chamada de função Mclust() acima são fornecidos a matriz de dados, o número de mix de componentes e a parametrização de covariância, todos são selecionados usando o critério de informação bayesiano
+(BIC - Bayesian Information Criterio). Um resumo mostrando os três modelos e um gráfico BIC para todos os modelo obtidos. No último gráfico, ajustamos o intervalo do eixo y para remover aqueles com valores BIC mais baixos. Há uma indicação clara do mix de três componentes com covariâncias com formas diferentes mas com o mesmo volume e orientação (EVE). 
+
+As abordagens Model=based assumem uma variedade de modelos de dados e aplicam a estimativa de máxima verossimilhança e os critérios de Bayes para identificar o modelo e o número de clusters mais prováveis. Especificamente, seleciona o modelo ótimo de acordo com BIC para EM inicializado por agrupamento hierárquico para modelos de distribuição Gaussiana parametrizada. Uma escolha do modelo e o número de aglomerados com o maior BIC.
+
+
+[The Scientist](http://www.thescientist.com.br)
+
+--
