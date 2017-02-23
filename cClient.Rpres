@@ -1,0 +1,150 @@
+Customer Cluster Analysis
+========================================================
+author: Delermando Branquinho Filho
+date: 23/02/2017
+autosize: true
+
+## Unsupervised Machine Learning
+
+Dataset
+========================================================
+
+Amostra: 50
+
+```{r, message=F, warning=F,echo=F}
+library("ggplot2")
+library("cluster")
+library("factoextra")
+library("nnet")
+library("ClustOfVar")
+library("lazyeval")
+library("fpc")
+require("xlsx")
+require("RCurl")
+set.seed(1608)
+age_years <- function(earlier, later) {
+        lt <- data.frame(earlier, later)
+        age <- as.numeric(format(lt[,2],format="%Y")) - as.numeric(format(lt[,1],format="%Y"))
+        
+        dayOnLaterYear <- ifelse(format(lt[,1],format="%m-%d")!="02-29",
+                                 as.Date(paste(format(lt[,2],format="%Y"),"-",format(lt[,1],format="%m-%d"),sep="")),
+                                 ifelse(as.numeric(format(later,format="%Y")) %% 400 == 0 | as.numeric(format(later,format="%Y")) %% 100 != 0 & as.numeric(format(later,format="%Y")) %% 4 == 0,
+                                        as.Date(paste(format(lt[,2],format="%Y"),"-",format(lt[,1],format="%m-%d"),sep="")),
+                                        as.Date(paste(format(lt[,2],format="%Y"),"-","02-28",sep=""))))
+        
+        age[which(dayOnLaterYear > lt$later)] <- age[which(dayOnLaterYear > lt$later)] - 1
+        
+        age
+}
+maxLoad <- 51
+mydata <- read.xlsx("datasets/Dataset-CodeChallengeDataScientist.xlsx", 
+                    sheetName  = "Dados",endRow = maxLoad)
+mydata <- data.frame(mydata,stringsAsFactors = TRUE)
+mydata <- na.omit(mydata)
+mydata$DATA_NASCIMENTO <- age_years(as.Date(mydata$DATA_NASCIMENTO),as.Date(Sys.Date()))
+mydata$GEO_REFERENCIA <- scale(mydata$GEO_REFERENCIA)
+mydata$VALOR_01 <- scale(mydata$VALOR_01)
+mydata$VALOR_02 <- scale(mydata$VALOR_02)
+mydata$VALOR_03 <- scale(mydata$VALOR_03)
+mydata$VALOR_04 <- scale(mydata$VALOR_04)
+names(mydata) <- c("ID","GEO","Age","Prof","Gen","EstCiv","V1","V2","V3","V4","Per")
+head(mydata,3)
+
+```
+
+========================================================
+## Modelo hierarquico
+
+** Numero de clusters
+
+```{r, message=F, warning=F,echo=F}
+a <- mydata[,c(4:6,11)]
+x <- mydata[,c(2,3,7:10)]
+mydata <- mydata[,2:11]
+tree <- hclustvar(x,a)
+stab <- stability(tree, graph = FALSE,B = 10)
+nrCluster <- which.is.max(stab$meanCR)
+nrCluster
+
+```
+
+Grafico
+========================================================
+
+```{r, echo=FALSE}
+plot(stab)
+
+```
+
+
+Dendrogram
+========================================================
+
+```{r, echo=FALSE}
+plot(tree)
+rect.hclust(tree, k=nrCluster, border="red")
+
+```
+
+KMeans
+========================================================
+
+```{r, message=F, warning=F,echo=F}
+fit <- kmeans(x, nrCluster) 
+clusplot(mydata, fit$cluster, color=TRUE, shade=TRUE, labels=4, lines=0,main = "Clusters e seus centroides",xlab = "Componente 1", ylab = "Componente 2")
+
+```
+
+
+Clustering
+========================================================
+
+```{r, message=F, warning=F, echo=F}
+library(mclust)
+fit <- Mclust(mydata)
+plot(fit, what = "BIC", ylim = range(fit$BIC[,-(1:2)], na.rm = TRUE),
+legendArgs = list(x = "bottomleft"))
+```
+
+BIC - Bayesian Information Criterio
+========================================================
+```{r, message=F, warning=F, echo=F}
+fit <- MclustDR(fit)
+plot(fit, what = "pairs")
+```
+
+
+Regressao Linear - Coeficientes
+========================================================
+```{r, message=F, warning=F, echo=F}
+model <- lm(mydata$Age ~ mydata$V1 + mydata$V2 + mydata$V3 + mydata$V4)
+print(model$coefficients)
+```
+
+Regressao Linear - Sumario do modelo
+========================================================
+```{r, message=F, warning=F, echo=F}
+summary(model)
+```
+
+Regressao Linear - Grafico
+========================================================
+```{r, message=F, warning=F, echo=F}
+maxV <- max(mydata$V1,mydata$V2,mydata$V3,mydata$V4)
+maxAge <- max(mydata$Age)
+plot(mydata$V1, mydata$Age, col = "blue", pch = 19, 
+     ylim = c(0,maxAge),  xlim = c(0,maxV), xlab = "Valores", ylab = "Idade")
+par(new=TRUE)
+legend("bottomright", xpd=TRUE, ncol=2, legend=c("V1", "V2", "V3", "V4"),
+       fill=c("blue", "red", "green", "orange"), bty="n", pch = c(19,24,22,19))
+par(new=TRUE)
+plot(mydata$V2, mydata$Age, col = "red",  pch = 24, 
+     ylim = c(0,maxAge),  xlim = c(0,maxV), xlab = "Valores", ylab = "Idade")
+par(new=TRUE)
+plot(mydata$V3, mydata$Age, col = "darkgreen", pch = 22,  
+     ylim = c(0,maxAge),  xlim = c(0,maxV), xlab = "Valores", ylab = "Idade")
+par(new=TRUE)
+plot(mydata$V4, mydata$Age, col = "orange",  pch = 19,
+     ylim = c(0,maxAge),  xlim = c(0,maxV), xlab = "Valores", ylab = "Idade")
+abline(model)
+```

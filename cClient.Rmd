@@ -11,6 +11,7 @@ subtitle: Unsupervised Machine Learning
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+start.time <- Sys.time() # código para medir o tempo de execução
 ```
 
 # Introdução
@@ -19,42 +20,33 @@ A análise de cluster ou clustering é a tarefa de agrupar um conjunto de objeto
 
 Análise de cluster em si não é um algoritmo específico, mas é a tarefa geral a ser resolvida. Pode ser alcançado por vários algoritmos que diferem significativamente em sua noção do que constitui um cluster e como encontrá-los eficientemente. As noções populares de clusters incluem grupos com pequenas distâncias entre os membros do cluster, áreas densas do espaço de dados, intervalos ou distribuições estatísticas particulares. Clustering pode, portanto, ser formulado como um problema de otimização multi-objetivo. O algoritmo de agrupamento apropriado e as configurações de parâmetros (incluindo valores como a função de distância a ser usada, um limite de densidade ou o número de clusters esperados) dependem do conjunto de dados individuais e do uso pretendido dos resultados. A análise de cluster como tal não é uma tarefa automática, mas um processo iterativo de descoberta de conhecimento ou otimização multi-objetivo interativa que envolve julgamento e falha. Muitas vezes é necessário modificar o pré-processamento de dados e os parâmetros do modelo até que o resultado obtenha as propriedades desejadas.
 
-Neste documetno, descreverei três das várias abordagens: aglomeração hierárquica, particionamento e model based. Embora não haja melhores soluções para o problema de determinar o número de aglomerados a extrair, são dadas várias abordagens abaixo.
+Uma cópia desse experimento, contendo programas fonte, dataset e demais arquivos pode ser descarregados em:
+[Customer Cluster Analysis](https://github.com/TheScientistBr/Clustering)
 
 ## Preparação do ambiente para execução
 
+Estou usando a Linguagem R neste experimento por questões de comodidade. O dieal é não ficar preso a uma ferramenta. Outras opções de clusterização, como o Cluto, podem ser vantajosas em situações com dados mais volumosos.
+
+A versão da Linguagem R segua abaixo:
+
+```{r}
+version
+```
+
 ### Uma função para validar os pacotes necessário se estão instalados
 
-As informações encontradas são armazenadas em cache (pela biblioteca) para a sessão R eo argumento de campos especificados e atualizadas somente se o diretório da biblioteca de nível superior tiver sido alterado, por exemplo, instalando ou removendo um pacote. Se as informações em cache ficarem confusas, ela pode ser atualizada executando installed.packages (noCache = TRUE).
+As informações encontradas são armazenadas em cache (pela biblioteca) para a sessão R eo argumento de campos especificados e atualizadas somente se o diretório da biblioteca de nível superior tiver sido alterado, por exemplo, instalando ou removendo um pacote. Se as informações em cache ficarem confusas, ela pode ser atualizada executando installed.packages (noCache = TRUE). O objetivo aqui é manter a reprodutibilidade do experimento.
 
 ```{r, message=F, warning=F}
 is.installed <- function(mypkg) is.element(mypkg, installed.packages()[,1]) 
 
 ```
 
-### Verificando se os pacotes necessários estão instalados
-
-```{r, message=F, warning=F}
-if(!is.installed("cluster"))
-        install.packages("cluster")
-
-if(!is.installed("factoextra"))
-        install.packages("factoextra")
-
-if(!is.installed("xlsx"))
-        install.packages("xlsx")
-
-if(!is.installed("ggplot2"))
-        install.packages("ggplot2", dep = TRUE)
-
-if(!is.installed("lazyeval"))
-        install.packages("lazyeval", dep = TRUE)
-```
-
 
 ### Uma Função para calcular a idade dos cliente de acordo com sua data de nacimento
 
-Esta função é necessária para converter, em tempo de execução, a idade de cada cliente
+Esta função converte, em tempo de execução, a idade de cada cliente.
+Esta função não é exatamente necessária, mas demonstra uma transformação do dados. Isso pode ocorrer em outros momentos e em outros dados dependendo da situação. Algo contruído para essa tarefa especificamente.
 
 ```{r, message=F, warning=F}
 age_years <- function(earlier, later) {
@@ -73,10 +65,38 @@ age_years <- function(earlier, later) {
 }
 ```
 
+### Verificando se os pacotes necessários estão instalados
+
+```{r, message=F, warning=F}
+if(!is.installed("ggplot2"))
+        install.packages("ggplot2", dep = TRUE)
+
+if(!is.installed("cluster"))
+        install.packages("cluster")
+
+if(!is.installed("factoextra"))
+        install.packages("factoextra")
+
+if(!is.installed("nnet"))
+        install.packages("nnet", dep = TRUE)
+
+if(!is.installed("xlsx"))
+        install.packages("xlsx")
+
+if(!is.installed("lazyeval"))
+        install.packages("lazyeval", dep = TRUE)
+
+if(!is.installed("RCurl"))
+        install.packages("RCurl", dep = TRUE)
+
+if(!is.installed("fpc"))
+        install.packages("fpc", dep = TRUE)
+```
+
 ### Carrega os pacotes necessários para a execução
 
 As mensagens e avisos foram retiradas ou suprimidas para efeito de apresentação.
-Os erros serão mostrados caso algum seja encontrado durante a carga da biblioteca
+Os erros serão mostrados caso algum seja encontrado durante a carga da biblioteca.
 
 ```{r, message=F, warning=F}
 library("ggplot2")
@@ -84,13 +104,15 @@ library("cluster")
 library("factoextra")
 library("nnet")
 library("ClustOfVar")
+library("lazyeval")
+library("fpc")
 require("xlsx")
 require("RCurl")
 ```
 
 **Inicializa ambiente de pesquisa reprodutível**
 
-Não há problemas em alerar o valor abaixo, desde que isso não seja feito no mesmo experimento.
+Não há problemas em alterar o valor abaixo, desde que isso não seja feito no mesmo experimento, o objetivo aqui, mais uma vez é a reprodutibilidade.
 
 ```{r, message=F, warning=F}
 set.seed(1608)
@@ -110,12 +132,14 @@ head(mydata,3)
 mydata <- data.frame(mydata,stringsAsFactors = TRUE)
 ```
 
-### Remove dados não disponíveis, caso existam
+### Limpeza e arrumação dos dados
+
+Remove dados não disponíveis (NA), caso existam, e executa a normalização das variáveis quantitativas.
 
 ```{r, message=F, warning=F}
 mydata <- na.omit(mydata)
 
-# scale é uma função genérica cujo método padrão centra e / ou escala as colunas de uma matriz numérico
+# scale é uma função genérica cujo método padrão centra e / ou escala as colunas de uma matriz numérica
 
 mydata$DATA_NASCIMENTO <- age_years(as.Date(mydata$DATA_NASCIMENTO),as.Date(Sys.Date()))
 mydata$GEO_REFERENCIA <- scale(mydata$GEO_REFERENCIA)
@@ -124,12 +148,17 @@ mydata$VALOR_02 <- scale(mydata$VALOR_02)
 mydata$VALOR_03 <- scale(mydata$VALOR_03)
 mydata$VALOR_04 <- scale(mydata$VALOR_04)
 
+# Alterando os nomes das colunas para melhor visualização gráfica
+names(mydata) <- c("ID","GEO","Age","Prof","Gen","EstCiv","V1","V2","V3","V4","Per")
+
 # Após o processamento, logo abaixo são mostradas as mesmas três primeiras linhas normalizadas
 
 head(mydata,3)
 ```
 
 # Clusterizando
+
+Existem várias abordagens para a clusterização, como por exemplo, Métodos de Particionamento, Métodos Hierárquicos, Métodos Baseados em Densidade, Métodos Baseados em Grid, Métodos Baseados em Modelos (Model-based). Neste documento, descreverei três: **aglomeração hierárquica, particionamento e Model-based.** Embora não haja melhores soluções para o problema de determinar o número de aglomerados a extrair, ou melhor, quantos clusters, optamos pelas abordagens abaixo.
 
 ## Modelo hierárquico
 
@@ -139,23 +168,25 @@ As variáveis podem ser quantitativas, qualitativas ou uma distribuição de amb
 
 PCA mix é definido para uma distribuição de variáveis qualitativas e quantitativas e inclui análises de componentes principais comuns (**PCA**) e análise de correspondência múltipla (**MCA**) como casos especiais. Os valores em falta são substituídos por médias para variáveis quantitativas e por zeros na matriz de indicadores para a variável qualitativa.
 
-**Vamos separar o dataset em duas parte, qualitativa como "a" e quantitativa como "x"**
+**Vamos separar o dataset em duas partes, qualitativa como "a" e quantitativa como "x"**
+Vamos também ignorar o ID do cliente para efietos de clusterização, poiis queremos nesse momento entender o dataset e como ele se comporta.
 
 ```{r, message=F, warning=F}
 a <- mydata[,c(4:6,11)]
 x <- mydata[,c(2,3,7:10)]
+mydata <- mydata[,2:11]
 ```
 
 ### Número de cluster encontrados, ou aglomerações
 
-Observando a figura abaixo, podemos verificar que ela sugere um número possível de clusters.
+Observando a figura abaixo, podemos verificar que ela sugere um número possível de clusters. Usamos uma validação ***k-fold*** de 10.
 
 ```{r, message=F, warning=F}
 tree <- hclustvar(x,a)
 stab <- stability(tree, graph = FALSE,B = 10)
 ```
 
-**Número de Cluster encontrados**
+**Número de Cluster sugeridos**
 
 ```{r, message=F, warning=F}
 nrCluster <- which.is.max(stab$meanCR)
@@ -163,17 +194,28 @@ nrCluster
 
 ```
 
-**Número de Cluster encontrados em formato gráfico**
+**Número de Cluster sugeridos em formato gráfico**
 
 ```{r, message=F, warning=F}
 plot(stab)
 
 ```
 
+### CLuster Dendrogram
+
+Um dendrograma (do grego dendro "árvore" e gramma "desenho") é um diagrama de árvore freqüentemente usado para ilustrar o arranjo dos clusters produzidos por agrupamento hierárquico. Dendrogramas são freqüentemente usados em biologia computacional para ilustrar o agrupamento de genes ou amostras, às vezes em cima de heatmaps. (Wikipédia).
+
+Em nosso caso os clusters são mostrados dentro dos blocos vermelhos. 
 
 ```{r, message=F, warning=F}
 plot(tree)
 rect.hclust(tree, k=nrCluster, border="red")
+```
+
+**Detalhamento**
+
+```{r, message=F, warning=F}
+tree
 ```
 
 ### Índice Rand ajustado
@@ -184,7 +226,7 @@ Para ajudar a confirmar o número provável de clusters, usaremos o gráfico no 
 boxplot(stab$matCR, main="Dispersão do índice Rand ajustado")
 ```
 
-O índice Rand [1] ou Rand (nomeado por William M. Rand) em estatística, e em particular no agrupamento de dados, é uma medida da similaridade entre dois agrupamentos de dados. Uma forma do índice Rand pode ser definida que é ajustada para o agrupamento casual de elementos, este é o índice Rand ajustado. Do ponto de vista matemático, o índice Rand está relacionado com a precisão, mas é aplicável mesmo quando os rótulos das classes não são usadas, ou seja, agrupamentos ou clusters.
+O índice Rand ou Rand (nomeado por William M. Rand) em estatística, e em particular no agrupamento de dados, é uma medida da similaridade entre dois agrupamentos de dados. Uma forma do índice Rand pode ser definida e ajustada para o agrupamento casual de elementos, este é o índice Rand ajustado. Do ponto de vista matemático, o índice Rand está relacionado com a precisão, mas é aplicável mesmo quando os rótulos das classes não são usadas, ou seja, agrupamentos ou clusters.
 
 
 ## Particionamento
@@ -204,17 +246,26 @@ pc.comp1 <- -1*pc.comp[,1]
 pc.comp2 <- -1*pc.comp[,2]
 newComp <- cbind(pc.comp1, pc.comp2)
 cl <- kmeans(newComp, nrCluster)
-plot(pc.comp1, pc.comp2,col=cl$cluster)
+plot(pc.comp1, pc.comp2,col=cl$cluster,xlab = "Componente 1", ylab = "Componente 2",
+     main = "KMeans & PCA")
 points(cl$centers, pch=16)
 ```
 
 O algorítmo kmeans executa a análise de agrupamento e fornece os resultados de agrupamento e seus centroides, para ser exato, o vetor centróide (ou seja, a média) para cada cluster.
 
+Observa-se aqui que um dos clusters está linearmente separável dos demais. Os outros estão coesos. Observa-se também que quanto maior o valor da primeira componente, mais esparço ficam os elementos do cluster, isso pode justificar essa separabilidade.
+
+Sugerimos o uso de regressão linear, ou quadrática dependendo dos resultados da linear, para identificar relações entre as variáveis qualitativas, como por exemplo a idade ou perfil com as variáveis quantitativas (valor_01, valor_02 ...) que não são identificadas nominalmente.
+
+**Tamanho das partições do Cluster**
+```{r}
+cl$size
+```
+
 
 ```{r, message=F, warning=F}
 fit <- kmeans(x, nrCluster) 
-fit$size
-clusplot(mydata, fit$cluster, color=TRUE, shade=TRUE, labels=4, lines=0)
+clusplot(mydata, fit$cluster, color=TRUE, shade=TRUE, labels=4, lines=0,main = "Clusters e seus centroides",xlab = "Componente 1", ylab = "Componente 2")
 ```
 
 
@@ -222,21 +273,125 @@ clusplot(mydata, fit$cluster, color=TRUE, shade=TRUE, labels=4, lines=0)
 
 Na abordagem Model-based clustering, cada componente de uma densidade de distribuição finita é geralmente associado a um grupo ou cluster. A maioria das aplicações assume que todas as densidades de componentes surgem da mesma família de distribuição paramétrica, embora isto não necessite ser o caso em geral. Um modelo popular é o modelo de distribuição gaussiana (GMM), que assume uma distribuição gaussiana (multivariada).
 
+### BIC
+As abordagens Model-based assumem uma variedade de modelos de dados e aplicam a estimativa de máxima verossimilhança e os critérios de Bayes para identificar o modelo e o número de clusters mais prováveis. Especificamente, seleciona o modelo ótimo de acordo com BIC para EM inicializado por agrupamento hierárquico para modelos de distribuição Gaussiana parametrizada. Uma escolha do modelo e o número de aglomerados com o maior BIC
 
 ```{r, message=F, warning=F}
 library(mclust)
 fit <- Mclust(mydata)
 
-plot(fit, ylim = range(fit$BIC[,-(1:2)], na.rm = TRUE),
+plot(fit, what = "BIC", ylim = range(fit$BIC[,-(1:2)], na.rm = TRUE),
 legendArgs = list(x = "bottomleft"))
 
 ```
 
-
 Na chamada de função Mclust() acima são fornecidos a matriz de dados, o número de mix de componentes e a parametrização de covariância, todos são selecionados usando o critério de informação bayesiano
 (BIC - Bayesian Information Criterio). Um resumo mostrando os três modelos e um gráfico BIC para todos os modelo obtidos. No último gráfico, ajustamos o intervalo do eixo y para remover aqueles com valores BIC mais baixos. Há uma indicação clara do mix de três componentes com covariâncias com formas diferentes mas com o mesmo volume e orientação (EVE). 
 
-As abordagens Model=based assumem uma variedade de modelos de dados e aplicam a estimativa de máxima verossimilhança e os critérios de Bayes para identificar o modelo e o número de clusters mais prováveis. Especificamente, seleciona o modelo ótimo de acordo com BIC para EM inicializado por agrupamento hierárquico para modelos de distribuição Gaussiana parametrizada. Uma escolha do modelo e o número de aglomerados com o maior BIC.
+
+### Classificação
+
+```{r, message=F, warning=F}
+plot(fit, what = "class", ylim = range(fit$classification[,-(1:2)], na.rm = TRUE))
+
+```
+
+
+### Densidade
+
+Na abordagem baseada em modelos de clustering, cada componente de uma densidade de distribuição finita é geralmente associada a um grupo ou cluster. A maioria das aplicações assume que todas as densidades de componentes surgem da mesma família de distribuição paramétrica, embora isto não necessite ser o caso em geral.
+
+```{r, message=F, warning=F}
+plot(fit, what = "density", ylim = range(fit$density[,-(1:2)], na.rm = TRUE))
+
+```
+
+
+## Redução de dimensionalidade
+
+Métodos eficientes de redução de dimensionalidade de dados representados em elevada dimensão são importantes, não apenas para viabilizar a visualização de dados em dimensões adequadas para a percepção humana, como também em sistemas automáticos de reconhecimento de padrões, como por exemplo, na eliminação de características redundantes.
+
+### Clustering
+
+```{r, message=F, warning=F}
+fit <- MclustDR(fit)
+summary((fit))
+```
+
+No sentido horário, a partir do canto superior esquerdo: BIC, classificação, incerteza e densidade aplicada ao exemplo simulado univariável. No gráfico de classificação, todos os dados são exibidos na parte inferior, com as classes separadas mostradas em diferentes níveis acima.
+
+**OBS:** Com a redução de dimensionalidade o tamanho das partições se alterou. O mesmo ocorre com a quantidade de partições. Isso é pertinente, já que dados irrlevantes (cuja variabilidade não descrevem o cluster) foram retirados. Sugerimos optar por essa abortdagem.
+
+```{r, message=F, warning=F}
+plot(fit, what = "pairs")
+```
+
+Onde a incerteza é mostrada usando uma escala de cinza com regiões mais escuras indicando maior incerteza. Ambos traçam os dados para as duas primeiras direções. O diagrama de contorno das densidades de mistura para cada cluster (esquerda) e limites de clusterização (à direita)  para o conjunto de dados.
+
+```{r, message=F, warning=F}
+plot(fit, what = "boundaries", ngrid = 200)
+```
+
+
+## Inferência Estatística
+
+Com o objetivo de verificar a relação entre variáveis, nesta seção vamos usar a regressão linear. É chamada "linear" porque se considera que a relação da resposta às variáveis é uma função linear de alguns parâmetros. Os modelos de regressão que não são uma função linear dos parâmetros se chamam modelos de regressão não-linear. Sendo uma das primeiras formas de análise regressiva a ser estudada rigorosamente, e usada extensamente em aplicações práticas. Isso acontece porque modelos que dependem de forma linear dos seus parâmetros desconhecidos, são mais fáceis de ajustar que os modelos não-lineares aos seus parâmetros, e porque as propriedades estatísticas dos estimadores resultantes são fáceis de determinar.
+
+### Apenas um exemplo
+
+A exploração deve ser realizada por todas as variáveis, o que inclui as variáveis qualitativas, o quanto essas categorias influenciam, ou são influenciadas por outras variáveis.O que queremos agora é saber quais variáveis são dependentes e quais são independentes.
+
+**Idade**
+
+Vamos tentar estabelecer alguma relação entre a idade e os valores do dataset. Primeiro criamos um modelo com essas variáveis.
+
+```{r, message=F, warning=F}
+model <- lm(mydata$Age ~ mydata$V1 + mydata$V2 + mydata$V3 + mydata$V4)
+summary(model)
+```
+
+Observe os valores de p (p-value).
+
+```{r, message=F, warning=F}
+print(model$coefficients)
+
+```
+
+Embora os valores de correlaçãos sejam baixos, o valor_02 parece ter uma melhor relação com a idade dos clientes, o mesmo não ocorre com os outros valores, apesar da probabilidade estar abaixo de 0.001.
+
+**O gráfico**
+
+```{r, message=F, warning=F}
+maxV <- max(mydata$V1,mydata$V2,mydata$V3,mydata$V4)
+maxAge <- max(mydata$Age)
+plot(mydata$V1, mydata$Age, col = "blue", pch = 19, 
+     ylim = c(0,maxAge),  xlim = c(0,maxV), xlab = "Valores", ylab = "Idade")
+par(new=TRUE)
+legend("bottomright", xpd=TRUE, ncol=2, legend=c("V1", "V2", "V3", "V4"),
+       fill=c("blue", "red", "green", "orange"), bty="n", pch = c(19,24,22,19))
+par(new=TRUE)
+plot(mydata$V2, mydata$Age, col = "red",  pch = 24, 
+     ylim = c(0,maxAge),  xlim = c(0,maxV), xlab = "Valores", ylab = "Idade")
+par(new=TRUE)
+plot(mydata$V3, mydata$Age, col = "darkgreen", pch = 22,  
+     ylim = c(0,maxAge),  xlim = c(0,maxV), xlab = "Valores", ylab = "Idade")
+par(new=TRUE)
+plot(mydata$V4, mydata$Age, col = "orange",  pch = 19,
+     ylim = c(0,maxAge),  xlim = c(0,maxV), xlab = "Valores", ylab = "Idade")
+abline(model)
+```
+
+**Tempo total de execução deste programa**
+
+```{r}
+end.time <- Sys.time()
+time.taken <- end.time - start.time
+time.taken
+```
+
+
+.
+
 
 
 [The Scientist](http://www.thescientist.com.br)
