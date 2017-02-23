@@ -25,9 +25,9 @@ Uma cópia desse experimento, contendo programas fonte, dataset e demais arquivo
 
 ## Preparação do ambiente para execução
 
-Estou usando a Linguagem R neste experimento por questões de comodidade. O dieal é não ficar preso a uma ferramenta. Outras opções de clusterização, como o Cluto, podem ser vantajosas em situações com dados mais volumosos.
+Estou usando a Linguagem R neste experimento por questões de comodidade. O ideal é não ficar preso a uma ferramenta. Outras opções de clusterização, como o Cluto, podem ser vantajosas em situações com dados mais volumosos.
 
-A versão da Linguagem R segua abaixo:
+A versão da Linguagem R segue abaixo:
 
 ```{r}
 version
@@ -46,7 +46,7 @@ is.installed <- function(mypkg) is.element(mypkg, installed.packages()[,1])
 ### Uma Função para calcular a idade dos cliente de acordo com sua data de nacimento
 
 Esta função converte, em tempo de execução, a idade de cada cliente.
-Esta função não é exatamente necessária, mas demonstra uma transformação do dados. Isso pode ocorrer em outros momentos e em outros dados dependendo da situação. Algo contruído para essa tarefa especificamente.
+Esta função não é exatamente necessária, mas demonstra uma transformação dos dados. Isso pode ocorrer em outros momentos e em outros dados dependendo da situação. Algo contruído para essa tarefa especificamente.
 
 ```{r, message=F, warning=F}
 age_years <- function(earlier, later) {
@@ -91,7 +91,11 @@ if(!is.installed("RCurl"))
 
 if(!is.installed("fpc"))
         install.packages("fpc", dep = TRUE)
+
+if(!is.installed("clValid"))
+        install.packages("clValid", dep = TRUE)
 ```
+
 
 ### Carrega os pacotes necessários para a execução
 
@@ -125,7 +129,7 @@ O arquivo está no formato MS Excel, a planilha de interesse é a "Dados".
 A variável maxLoad é usada para limitar a carga, pois originalmente o volume de linhas não são recomendadas para efeitos de teste. Eu usei a variável com tamanho de 51, mas para a clusterização de todo dataset o conteúdo deve ser NULL.
 
 ```{r, message=F, warning=F}
-maxLoad <- NULL
+maxLoad <-NULL
 mydata <- read.xlsx("datasets/Dataset-CodeChallengeDataScientist.xlsx", 
                     sheetName  = "Dados",endRow = maxLoad)
 head(mydata,3)
@@ -331,6 +335,30 @@ Onde a incerteza é mostrada usando uma escala de cinza com regiões mais escura
 ```{r, message=F, warning=F}
 plot(fit, what = "boundaries", ngrid = 200)
 ```
+
+### Validando o melhor algorítmo
+
+**Como escolher os algoritmos de clustering apropriados para seus dados?**
+
+Começamos por validação de cluster interno que mede a conectividade, largura da silhueta e índice de Dunn. É possível calcular simultaneamente essas medidas internas para múltiplos algoritmos de clustering em combinação com uma série de números de cluster. 
+
+```{r, message=F, warning=F}
+library(clValid)
+clmethods <- c("hierarchical","kmeans","pam")
+mx<-as.matrix(x)
+intern <- clValid(mx, nClust = nrCluster, clMethods = clmethods, validation = "internal",maxitems = length(x$V1))
+summary(intern)
+plot(intern)
+```
+
+
+```{r, message=F, warning=F}
+stab <- clValid(mx, nClust = nrCluster, clMethods = clmethods, validation = "stability", maxitems = length(x$V1))
+optimalScores(stab)
+summary(stab)
+plot(stab)
+```
+
 
 
 ## Inferência Estatística

@@ -64,6 +64,12 @@ if(!is.installed("RCurl"))
 if(!is.installed("fpc"))
         install.packages("fpc", dep = TRUE)
 
+if(!is.installed("clValid"))
+        install.packages("clValid", dep = TRUE)
+
+if(!is.installed("ClustOfVar"))
+        install.packages("ClustOfVar", dep = TRUE)
+
 '### Carrega os pacotes necessários para a execução
 
 As mensagens e avisos foram retiradas ou suprimidas para efeito de apresentação.
@@ -94,7 +100,7 @@ O arquivo está no formato MS Excel, a planilha de interesse é a "Dados".
 A variável maxLoad é usada para limitar a carga, pois originalmente o volume de linhas não são recomendadas para efeitos de teste. Eu usei a variável com tamanho de 51, mas para a clusterização de todo dataset o conteúdo deve ser NULL.
 
 '
-maxLoad <- 51
+maxLoad <- NULL
 mydata <- read.xlsx("datasets/Dataset-CodeChallengeDataScientist.xlsx", 
                     sheetName  = "Dados",endRow = maxLoad)
 head(mydata,3)
@@ -144,7 +150,7 @@ mydata <- mydata[,2:11]
 ### Número de cluster encontrados, ou aglomerações
 
 tree <- hclustvar(x,a)
-stab <- stability(tree, graph = FALSE,B = 10)
+stab <- stability(tree, graph = FALSE, B = 10)
 
 
 # **Número de Cluster sugeridos**
@@ -239,6 +245,21 @@ plot(fit, what = "pairs")
 plot(fit, what = "boundaries", ngrid = 200)
 
 
+# Validando 
+library(clValid)
+clmethods <- c("hierarchical","kmeans","pam")
+mx<-as.matrix(x)
+intern <- clValid(mx, nClust = nrCluster, clMethods = clmethods, 
+                  validation = "internal",maxitems = length(x$V1))
+summary(intern)
+
+plot(intern)
+stab <- clValid(mx, nClust = nrCluster, clMethods = clmethods, 
+                validation = "stability",maxitems = length(x$V1))
+optimalScores(stab)
+summary(stab)
+plot(stab)
+
 # Inferência Estatística
 # Com o objetivo de verificar a relação entre variáveis, nesta seção vamos usar a regressão linear. É chamada "linear" porque se considera que a relação da resposta às variáveis é uma função linear de alguns parâmetros. Os modelos de regressão que não são uma função linear dos parâmetros se chamam modelos de regressão não-linear. Sendo uma das primeiras formas de análise regressiva a ser estudada rigorosamente, e usada extensamente em aplicações práticas. Isso acontece porque modelos que dependem de forma linear dos seus parâmetros desconhecidos, são mais fáceis de ajustar que os modelos não-lineares aos seus parâmetros, e porque as propriedades estatísticas dos estimadores resultantes são fáceis de determinar.
 # Apenas um exemplo
@@ -281,3 +302,5 @@ abline(model)
 end.time <- Sys.time()
 time.taken <- end.time - start.time
 time.taken
+
+
