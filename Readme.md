@@ -29,6 +29,7 @@ Análise de cluster em si não é um algoritmo específico, mas é a tarefa gera
 Neste documento, descreverei três das várias abordagens: aglomeração hierárquica, particionamento e model based. Embora não haja melhores soluções para o problema de determinar o número de aglomerados a extrair, são dadas várias abordagens abaixo.
 
 O relatório completo pode ser visualizado em [RPubs](http://rpubs.com/delermando/CCA)
+
 Uma apresentação simplificada do relatório pode ser acessada em [RPubs](http://rpubs.com/delermando/CCAapp)
 
 
